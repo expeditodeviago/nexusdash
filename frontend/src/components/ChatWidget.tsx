@@ -33,8 +33,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ fileId }) => {
     setLoading(true);
 
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${apiUrl}/api/nexus/chat`, {
+      const API_URL = import.meta.env.VITE_API_URL || 'https://nexusdash-api.onrender.com';
+      const response = await fetch(`${API_URL}/api/nexus/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pergunta: input, file_id: fileId }),
