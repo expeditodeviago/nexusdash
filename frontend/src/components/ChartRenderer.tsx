@@ -26,7 +26,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ type, data, title,
 
   if (isDataIncompatible) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-slate-400 dark:text-slate-600 p-8 text-center animate-in">
+      <div className="w-full h-80 min-h-[300px] flex flex-col items-center justify-center text-slate-400 dark:text-slate-600 p-8 text-center animate-in">
         <AlertCircle size={40} className="mb-4 opacity-20" />
         <p className="text-xs font-bold uppercase tracking-widest text-cyan-500">Aviso de Compatibilidade</p>
         <p className="text-[10px] mt-2 max-w-[200px] font-medium">
@@ -38,16 +38,22 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ type, data, title,
   }
 
   if (!data || data.length === 0) {
+    console.log(`[Recharts] Nenhum dado para ${title}`);
     return (
-      <div className="flex-1 flex items-center justify-center text-slate-400 opacity-20 p-8">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Sem dados disponíveis</p>
+      <div className="w-full h-80 min-h-[300px] flex items-center justify-center text-slate-400 opacity-20 p-8">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em]">Sem dados disponíveis para este gráfico.</p>
       </div>
     );
   }
 
-  // Detectar as chaves dinamicamente (para suportar name/value e faixa/frequencia)
+  // Debug log para verificar estrutura dos dados
+  console.log(`[Recharts] Renderizando ${title} (${type}) com ${data.length} registros:`, data);
+
+  // Detectar as chaves dinamicamente
   const xKey = data[0]?.faixa ? 'faixa' : (data[0]?.x ? 'x' : 'name');
   const yKey = data[0]?.frequencia !== undefined ? 'frequencia' : (data[0]?.y ? 'y' : 'value');
+
+  console.log(`Chaves detectadas para ${title}: x=${xKey}, y=${yKey}. Registros: ${data.length}`);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -59,16 +65,12 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ type, data, title,
             if (labelName === 'value' || labelName === 'frequencia') labelName = 'Quantidade';
             if (labelName === 'x') labelName = title;
             if (labelName === 'y') labelName = scatterCol || 'Variável Y';
-            if (labelName === 'Volume') labelName = 'Volume';
-            if (labelName === 'Tendência') labelName = 'Tendência';
-            if (labelName === 'Intensidade') labelName = 'Intensidade';
-            if (labelName === 'Evolução') labelName = 'Evolução';
-
+            
             return (
               <p key={i} className="text-sm font-black text-slate-900 dark:text-white">
                 {labelName}: 
                 <span className="text-cyan-500 ml-1">
-                  {typeof p.value === 'number' ? p.value.toLocaleString('pt-BR') : p.value}
+                  {typeof p.value === 'number' ? Math.round(p.value).toLocaleString('pt-BR') : p.value}
                 </span>
               </p>
             );
@@ -91,9 +93,8 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ type, data, title,
           <PieChart>
             <Pie 
               data={data} 
-              innerRadius={60} 
               outerRadius={100} 
-              paddingAngle={5}
+              paddingAngle={2}
               dataKey={yKey}
               stroke="none"
               nameKey={xKey}
@@ -108,18 +109,11 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ type, data, title,
           </PieChart>
         );
       case 'scatter':
-        if (!scatterCol) {
-          return (
-            <div className="flex-1 flex items-center justify-center text-slate-400 opacity-50 p-8 text-center">
-              <p className="text-[10px] font-bold uppercase tracking-widest">Selecione uma segunda variável no menu superior para dispersão</p>
-            </div>
-          );
-        }
         return (
           <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: -20 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-200 dark:text-slate-800" />
-            <XAxis type="number" dataKey="x" name={title} unit="" fontSize={10} tick={{fill: '#64748b'}} />
-            <YAxis type="number" dataKey="y" name={scatterCol} unit="" fontSize={10} tick={{fill: '#64748b'}} />
+            <XAxis type="number" dataKey="x" name={title} unit="" fontSize={10} tick={{fill: '#64748b'}} allowDecimals={false} />
+            <YAxis type="number" dataKey="y" name={scatterCol} unit="" fontSize={10} tick={{fill: '#64748b'}} allowDecimals={false} />
             <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<CustomTooltip />} />
             <Scatter name="Correlação" data={data} fill={COLORS[index % COLORS.length]} />
             <Legend formatter={() => <span className="text-[10px] font-bold text-slate-500 uppercase">Correlação: {title} vs {scatterCol}</span>} />
@@ -130,7 +124,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ type, data, title,
           <RadarChart cx="50%" cy="50%" outerRadius="80%" data={data}>
             <PolarGrid stroke="currentColor" className="text-slate-200 dark:text-slate-800" />
             <PolarAngleAxis dataKey={xKey} tick={{ fontSize: 10, fill: '#64748b' }} />
-            <PolarRadiusAxis fontSize={10} />
+            <PolarRadiusAxis fontSize={10} tick={{fill: '#64748b'}} allowDecimals={false} />
             <Radar name="Frequência" dataKey={yKey} stroke={COLORS[index % COLORS.length]} fill={COLORS[index % COLORS.length]} fillOpacity={0.6} />
             <Tooltip content={<CustomTooltip />} />
           </RadarChart>
@@ -140,7 +134,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ type, data, title,
           <ComposedChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-200 dark:text-slate-800" />
             <XAxis dataKey={xKey} fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
-            <YAxis fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
+            <YAxis allowDecimals={false} fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
             <Tooltip content={<CustomTooltip />} />
             <Bar dataKey={yKey} name="Volume" fill={COLORS[index % COLORS.length]} radius={[6, 6, 0, 0]} barSize={30} />
             <Line type="monotone" dataKey={yKey} name="Tendência" stroke="#f43f5e" strokeWidth={3} dot={false} />
@@ -152,7 +146,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ type, data, title,
           <AreaChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-200 dark:text-slate-800" />
             <XAxis dataKey={xKey} fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
-            <YAxis fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
+            <YAxis allowDecimals={false} fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
             <Tooltip content={<CustomTooltip />} />
             <Area type="monotone" dataKey={yKey} name="Intensidade" stroke={COLORS[index % COLORS.length]} fill={COLORS[index % COLORS.length]} fillOpacity={0.2} strokeWidth={3} />
           </AreaChart>
@@ -163,25 +157,41 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ type, data, title,
           <LineChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-200 dark:text-slate-800" />
             <XAxis dataKey={xKey} fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
-            <YAxis fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
+            <YAxis allowDecimals={false} fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
             <Tooltip content={<CustomTooltip />} />
             <Line type="monotone" dataKey={yKey} name="Evolução" stroke={COLORS[index % COLORS.length]} strokeWidth={4} dot={{ r: 4, fill: COLORS[index % COLORS.length], strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
           </LineChart>
         );
-      default: // bar and histogram
+      case 'histogram':
+        return (
+          <BarChart {...commonProps} barCategoryGap={0} barGap={0}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-200 dark:text-slate-800" />
+            <XAxis dataKey="faixa" fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
+            <YAxis allowDecimals={false} fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
+            <Tooltip content={<CustomTooltip />} />
+            <Bar 
+                dataKey="frequencia" 
+                name="Frequência" 
+                fill={COLORS[index % COLORS.length]} 
+                stroke="rgba(0,0,0,0.3)"
+                strokeWidth={1}
+                radius={[0, 0, 0, 0]} 
+            />
+          </BarChart>
+        );
+      default: // bar
         return (
           <BarChart {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-200 dark:text-slate-800" />
             <XAxis dataKey={xKey} fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
-            <YAxis fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
+            <YAxis allowDecimals={false} fontSize={10} tick={{fill: '#64748b'}} tickLine={false} axisLine={false} />
             <Tooltip content={<CustomTooltip />} />
             <Bar 
                 dataKey={yKey} 
                 name="Contagem" 
                 fill={COLORS[index % COLORS.length]} 
                 radius={[6, 6, 0, 0]} 
-                barSize={type === 'histogram' ? 45 : 30}
-                {...(type === 'histogram' ? { barCategoryGap: 1 } : {})}
+                barSize={30}
             />
           </BarChart>
         );
@@ -189,7 +199,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({ type, data, title,
   };
 
   return (
-    <div className="flex-1 min-h-0 w-full flex flex-col">
+    <div className="w-full h-80 min-h-[300px] flex flex-col">
       <ResponsiveContainer width="100%" height="100%">
         {renderContent()}
       </ResponsiveContainer>

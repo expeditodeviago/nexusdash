@@ -1,9 +1,16 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import pandas as pd
 import io
 import numpy as np
+import os
+import uuid
 from typing import List, Dict, Any, Optional
+from dotenv import load_dotenv
+from groq import Groq
+
+load_dotenv()
 
 app = FastAPI(title="NexusDash Core API")
 
@@ -14,6 +21,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Configuração Groq
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
+# Armazenamento em memória (para o Chat)
+DATA_STORE = {}
+
+class ChatRequest(BaseModel):
+    pergunta: str
+    file_id: str
 
 def clean_numeric_data(val):
     """Limpa moedas, percentuais e formatações brasileiras/americanas."""
@@ -33,14 +51,10 @@ def calculate_histogram(series, bins=10):
     numeric_data = pd.to_numeric(series, errors='coerce').dropna()
     if numeric_data.empty: return []
     
-    # Criar as faixas (bins) usando pandas para maior precisão nos rótulos
     try:
-        # pd.cut cria categorias baseadas nos valores
         counts = pd.cut(numeric_data, bins=bins).value_counts().sort_index()
-        
         result = []
         for interval, count in counts.items():
-            # Formatar o intervalo de forma amigável: "X a Y"
             label = f"{interval.left:.1f} a {interval.right:.1f}"
             result.append({
                 "faixa": label,
@@ -51,7 +65,6 @@ def calculate_histogram(series, bins=10):
         return result
     except Exception as e:
         print(f"Erro no histograma: {e}")
-        # Fallback para numpy se o pd.cut falhar por algum motivo (ex: valores constantes)
         counts, bin_edges = np.histogram(numeric_data, bins=bins)
         return [
             {
@@ -63,6 +76,27 @@ def calculate_histogram(series, bins=10):
             for i in range(len(counts))
         ]
 
+def generate_insight(col_name, is_numeric, df):
+    """Algoritmo analítico simples para gerar o insight do gráfico."""
+    if is_numeric:
+        numeric_data = pd.to_numeric(df[col_name], errors='coerce').dropna()
+        if numeric_data.empty:
+            return f"Dados insuficientes para análise da coluna {col_name}."
+        min_val = numeric_data.min()
+        max_val = numeric_data.max()
+        mean_val = numeric_data.mean()
+        return f"Os valores de {col_name} variam de {min_val:.1f} a {max_val:.1f}, com média em torno de {mean_val:.1f}."
+    else:
+        counts = df[col_name].value_counts()
+        if counts.empty:
+            return f"Dados insuficientes para análise da coluna {col_name}."
+        top_cat = counts.index[0]
+        top_val = counts.iloc[0]
+        total = len(df[col_name].dropna())
+        pct = (top_val / total) * 100 if total > 0 else 0
+        return f"A categoria '{top_cat}' é a mais frequente com {top_val} registros, representando {pct:.1f}% do total."
+
+
 @app.post("/api/upload")
 async def process_data(file: UploadFile = File(...)):
     try:
@@ -73,11 +107,9 @@ async def process_data(file: UploadFile = File(...)):
         else:
             df = pd.read_excel(io.BytesIO(content))
 
-        # Limpeza e Normalização
         cols_to_drop = [c for c in df.columns if any(x in str(c).lower() for x in ['carimbo', 'timestamp', 'unnamed', 'index'])]
         df = df.drop(columns=cols_to_drop)
 
-        # Conversão de Tipos
         for col in df.columns:
             if df[col].dtype == 'object':
                 df[col] = df[col].apply(clean_numeric_data)
@@ -87,39 +119,44 @@ async def process_data(file: UploadFile = File(...)):
         num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         cat_cols = df.select_dtypes(exclude=[np.number]).columns.tolist()
 
-        # Agregação Base (Top 10 Frequência) para todos
         series_data = {}
         for col in df.columns:
-            # Frequência básica (usada para Barras, Pizza, Radar, etc.)
             counts = df[col].value_counts().head(10)
             base_agg = [{"name": str(n), "value": int(v)} for n, v in counts.items()]
             
-            # Histograma real para numéricos
             hist_agg = []
             ogiva_agg = []
-            if col in num_cols:
+            is_num = col in num_cols
+            if is_num:
                 hist_agg = calculate_histogram(df[col])
                 acc = 0
                 for h in hist_agg:
                     acc += h['frequencia']
                     ogiva_agg.append({"faixa": f"Até {h['max']:.1f}", "frequencia": acc})
             
+            insight = generate_insight(col, is_num, df)
+            
             series_data[col] = {
                 "base": base_agg,
                 "histogram": hist_agg,
                 "ogiva": ogiva_agg,
-                "is_numeric": col in num_cols
+                "is_numeric": is_num,
+                "insight": insight
             }
 
-        # Filtros
         filtros = []
         for col in cat_cols:
             unique_vals = sorted([str(v) for v in df[col].unique() if v != "N/A"])
             if 1 < len(unique_vals) <= 50:
                 filtros.append({"coluna": col, "opcoes": unique_vals})
 
+        # Armazenar dados para o chat
+        file_id = str(uuid.uuid4())
+        DATA_STORE[file_id] = df
+
         return {
             "sucesso": True,
+            "file_id": file_id,
             "metricas": {
                 "total_registros": len(df),
                 "total_colunas": len(df.columns),
@@ -132,6 +169,45 @@ async def process_data(file: UploadFile = File(...)):
         }
     except Exception as e:
         return {"sucesso": False, "erro": str(e)}
+
+@app.post("/api/nexus/chat")
+async def nexus_chat(req: ChatRequest):
+    if not groq_client:
+        return {"sucesso": False, "erro": "API Key do Groq não configurada."}
+    
+    df = DATA_STORE.get(req.file_id)
+    if df is None:
+        return {"sucesso": False, "erro": "Arquivo não encontrado. Faça upload novamente."}
+    
+    # Extrair resumo estatístico detalhado para contexto
+    try:
+        # describe(include='all') fornece estatísticas para numéricos e categóricos
+        resumo_estatistico = df.describe(include='all').transpose().to_markdown()
+    except:
+        resumo_estatistico = "Não foi possível gerar um resumo tabular, mas o arquivo possui " + str(len(df)) + " registros."
+
+    sys_prompt = (
+        "Você é o NEXUS, um analista de dados especialista e objetivo. "
+        "Aqui está o resumo estatístico exato do arquivo atual:\n\n"
+        f"{resumo_estatistico}\n\n"
+        "Responda à pergunta do usuário de forma cirúrgica, citando os números reais, tendências e médias presentes neste resumo. "
+        "Se a pergunta for fora do escopo destes dados numéricos, informe que você só pode analisar as estatísticas do arquivo."
+    )
+    
+    try:
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": req.pergunta}
+            ],
+            model="llama-3.1-8b-instant",
+            temperature=0.2,
+            max_tokens=1024,
+        )
+        resposta = chat_completion.choices[0].message.content
+        return {"sucesso": True, "resposta": resposta}
+    except Exception as e:
+        return {"sucesso": False, "erro": f"Erro na IA: {str(e)}"}
 
 @app.get("/api/health")
 async def health(): return {"status": "online"}

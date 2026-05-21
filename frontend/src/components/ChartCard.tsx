@@ -11,6 +11,7 @@ interface ChartCardProps {
   type: string;
   isNumeric: boolean;
   data: any[];
+  insight?: string;
   allNumericCols?: string[];
   scatterCol?: string;
   onTypeChange: (type: string) => void;
@@ -19,94 +20,129 @@ interface ChartCardProps {
   index: number;
 }
 
-const INSIGHTS: Record<string, string> = {
-  bar: "Gráfico de Barras: Ideal para comparar valores entre diferentes categorias.",
-  pie: "Gráfico de Pizza: Mostra a proporção de cada categoria em relação ao total.",
-  area: "Gráfico de Área: Bom para visualizar tendências e volumes ao longo do tempo.",
-  line: "Gráfico de Linha: Excelente para identificar padrões e flutuações em séries numéricas.",
-  histogram: "Histograma: Mostra a distribuição e concentração dos dados em faixas numéricas.",
-  ogiva: "Ogiva: Representa a frequência acumulada, útil para entender percentis e totais crescentes.",
-  scatter: "Dispersão: Analisa a correlação entre duas variáveis numéricas.",
-  radar: "Radar: Compara múltiplas variáveis em relação a um ponto central.",
-  composed: "Composto: Combina barras e linhas para mostrar diferentes métricas juntas."
-};
-
 export const ChartCard: React.FC<ChartCardProps> = ({ 
-  title, type, isNumeric, data, allNumericCols, scatterCol, onTypeChange, onScatterColChange, onRemove, index 
+  title, type, isNumeric, data, insight, allNumericCols, scatterCol, onTypeChange, onScatterColChange, onRemove, index 
 }) => {
-  const [showInfo, setShowInfo] = useState(false);
+  const [showInfo, setShowInfo] = useState(true);
   const [showTooltip, setShowTooltip] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   const exportAsImage = async () => {
     if (!cardRef.current) return;
-    const canvas = await html2canvas(cardRef.current, { 
+    
+    // 1. Criar um CLONE do card para exportação perfeita sem cortes
+    const clone = cardRef.current.cloneNode(true) as HTMLElement;
+    
+    // Estilizar o clone explicitamente
+    Object.assign(clone.style, {
+      position: 'fixed',
+      top: '0',
+      left: '-10000px', // Fora da tela
+      width: '900px',  // Largura fixa para garantir proporção
+      height: 'auto',
+      minHeight: '650px',
+      padding: '40px', // Padding extra para evitar cortes nas bordas
       backgroundColor: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff',
-      scale: 2,
-      useCORS: true,
-      logging: false
+      borderRadius: '2.5rem',
+      zIndex: '-9999',
+      display: 'flex',
+      flexDirection: 'column'
     });
-    const link = document.createElement('a');
-    link.download = `NexusDash_${title.substring(0, 15)}_${type}.png`;
-    link.href = canvas.toDataURL('image/png', 1.0);
-    link.click();
+
+    // Ajustar elementos internos do clone
+    const titleEl = clone.querySelector('h4');
+    if (titleEl) {
+      titleEl.style.whiteSpace = 'normal';
+      titleEl.style.wordBreak = 'break-word';
+      titleEl.style.fontSize = '24px'; // Título maior para PNG
+      titleEl.style.marginBottom = '10px';
+    }
+
+    // Remover controles de interface no clone
+    const controls = clone.querySelector('.card-controls');
+    if (controls) controls.remove();
+
+    // Garantir que o insight apareça e não quebre
+    const insightBox = clone.querySelector('.insight-box');
+    if (insightBox) {
+      (insightBox as HTMLElement).style.marginBottom = '30px';
+      (insightBox as HTMLElement).style.padding = '20px';
+    }
+
+    document.body.appendChild(clone);
+
+    try {
+      const canvas = await html2canvas(clone, { 
+        backgroundColor: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff',
+        scale: 3, // Resolução ultra-alta
+        useCORS: true,
+        logging: false,
+        windowWidth: 900
+      });
+
+      const link = document.createElement('a');
+      link.download = `NexusDash_Chart_${title.substring(0, 15)}_${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png', 1.0);
+      link.click();
+    } catch (err) {
+      console.error("Erro ao exportar PNG:", err);
+    } finally {
+      document.body.removeChild(clone);
+    }
   };
 
   return (
-    <div ref={cardRef} id={`chart-card-${index}`} className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-[2rem] p-6 h-[520px] flex flex-col hover:shadow-2xl hover:border-cyan-500/30 transition-all group backdrop-blur-sm shadow-sm relative overflow-hidden animate-in">
+    <div ref={cardRef} id={`chart-card-${index}`} className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-8 h-[620px] flex flex-col hover:shadow-2xl hover:border-emerald-500/30 transition-all group backdrop-blur-sm shadow-sm relative overflow-hidden animate-in">
       
       {/* Header do Card */}
-      <div className="flex justify-between items-start mb-4 z-10 gap-3">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl text-cyan-500 group-hover:scale-110 transition-transform shadow-inner flex-shrink-0">
-            {type === 'pie' ? <PieIcon size={18}/> : type === 'scatter' ? <Target size={18}/> : <BarIcon size={18}/>}
+      <div className="flex justify-between items-start mb-6 z-10 gap-4">
+        <div className="flex items-center gap-4 min-w-0 flex-1">
+          <div className="p-4 bg-slate-50 dark:bg-slate-800/80 rounded-[1.2rem] text-emerald-500 group-hover:scale-110 transition-transform shadow-inner flex-shrink-0">
+            {type === 'pie' ? <PieIcon size={20}/> : type === 'scatter' ? <Target size={20}/> : <BarIcon size={20}/>}
           </div>
           
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 mb-0.5">
+            <div className="flex items-center gap-2 mb-1">
               <h4 
-                className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-tight truncate cursor-help"
+                className="text-base font-black text-slate-800 dark:text-white uppercase tracking-tight truncate cursor-help"
                 onMouseEnter={() => setShowTooltip(true)}
                 onMouseLeave={() => setShowTooltip(false)}
               >
                 {title}
               </h4>
-              <button onClick={() => setShowInfo(!showInfo)} className="text-slate-400 hover:text-cyan-500 transition-colors flex-shrink-0">
-                <HelpCircle size={14} />
+              <button onClick={() => setShowInfo(!showInfo)} className="text-slate-400 hover:text-emerald-500 transition-colors flex-shrink-0">
+                <HelpCircle size={16} />
               </button>
             </div>
             
-            {/* Tooltip do Título */}
-            {showTooltip && title.length > 15 && (
-              <div className="absolute top-14 left-16 z-50 bg-slate-800 text-white text-[10px] p-2 rounded-lg shadow-xl max-w-[200px] border border-slate-700 font-bold">
+            {showTooltip && title.length > 20 && (
+              <div className="absolute top-16 left-20 z-50 bg-slate-800 text-white text-[10px] p-2.5 rounded-xl shadow-2xl max-w-[250px] border border-slate-700 font-bold uppercase tracking-wider">
                 {title}
               </div>
             )}
             
-            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{isNumeric ? 'Dados Numéricos' : 'Dados Categóricos'}</p>
+            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">{isNumeric ? 'Matriz Numérica' : 'Matriz Categórica'}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Seletor do Eixo Y (Apenas Scatter) */}
+        <div className="flex items-center gap-2 flex-shrink-0 card-controls">
           {type === 'scatter' && allNumericCols && (
             <div className="relative group/select">
               <select 
-                className="appearance-none bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 pr-8 text-[10px] font-black text-cyan-600 uppercase outline-none focus:border-cyan-500/50 transition-all cursor-pointer"
+                className="appearance-none bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 pr-10 text-[10px] font-black text-emerald-600 uppercase outline-none focus:border-cyan-500/50 transition-all cursor-pointer"
                 value={scatterCol || ''}
                 onChange={(e) => onScatterColChange?.(e.target.value)}
               >
                 <option value="">Eixo Y...</option>
                 {allNumericCols.filter(c => c !== title).map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-              <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-cyan-400" />
+              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-400" />
             </div>
           )}
 
-          {/* Menu de Tipos de Gráficos (Sempre visível conforme solicitado) */}
           <div className="relative group/select">
             <select 
-              className="appearance-none bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 pr-8 text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase outline-none focus:border-cyan-500/50 transition-all cursor-pointer"
+              className="appearance-none bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 pr-10 text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase outline-none focus:border-emerald-500/50 transition-all cursor-pointer"
               value={type}
               onChange={(e) => onTypeChange(e.target.value)}
             >
@@ -120,38 +156,43 @@ export const ChartCard: React.FC<ChartCardProps> = ({
               <option value="radar">Radar</option>
               <option value="composed">Composto</option>
             </select>
-            <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
           </div>
 
-          <button onClick={exportAsImage} className="bg-slate-50 dark:bg-slate-950 text-emerald-500 border border-slate-200 dark:border-slate-800 transition-all p-2 rounded-xl hover:bg-emerald-500 hover:text-white" title="Baixar PNG">
-            <Download size={16}/>
+          <button onClick={exportAsImage} className="bg-slate-50 dark:bg-slate-950 text-emerald-500 border border-slate-200 dark:border-slate-800 transition-all p-2.5 rounded-xl hover:bg-emerald-500 hover:text-white" title="Baixar PNG">
+            <Download size={18}/>
           </button>
           
-          <button onClick={onRemove} className="bg-slate-50 dark:bg-slate-950 text-slate-400 hover:text-red-500 border border-slate-200 dark:border-slate-800 transition-all p-2 rounded-xl">
-            <X size={16}/>
+          <button onClick={onRemove} className="bg-slate-50 dark:bg-slate-950 text-slate-400 hover:text-red-500 border border-slate-200 dark:border-slate-800 transition-all p-2.5 rounded-xl">
+            <X size={18}/>
           </button>
         </div>
       </div>
 
       {/* Insight Info Panel */}
-      {showInfo && (
-        <div className="mb-4 bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-800/50 p-3 rounded-2xl animate-in flex gap-2 items-start">
-          <Info size={14} className="text-cyan-500 mt-0.5 flex-shrink-0" />
-          <p className="text-[11px] font-medium text-cyan-800 dark:text-cyan-300">
-            {INSIGHTS[type] || "Visualização analítica de dados."}
+      {showInfo && insight && (
+        <div className="insight-box mb-6 bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/50 p-4 rounded-[1.5rem] animate-in flex gap-3 items-start backdrop-blur-sm">
+          <div className="p-1.5 bg-emerald-500 rounded-lg text-white">
+            <Info size={14} />
+          </div>
+          <p className="text-[12px] font-semibold text-emerald-800 dark:text-emerald-300 leading-relaxed">
+            {insight}
           </p>
         </div>
       )}
 
       {/* Renderizador de Gráfico */}
-      <ChartRenderer 
-        type={type}
-        data={data}
-        title={title}
-        isNumeric={isNumeric}
-        scatterCol={scatterCol}
-        index={index}
-      />
+      <div className="flex-1 min-h-0 w-full">
+        {console.log(`Dados para o gráfico ${title}:`, data)}
+        <ChartRenderer 
+          type={type}
+          data={data}
+          title={title}
+          isNumeric={isNumeric}
+          scatterCol={scatterCol}
+          index={index}
+        />
+      </div>
     </div>
   );
 };

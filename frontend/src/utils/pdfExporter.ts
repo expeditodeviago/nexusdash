@@ -9,121 +9,69 @@ interface ExportOptions {
 }
 
 export const exportDashboardToPDF = async ({ element, logo, totalRegistros, darkMode }: ExportOptions) => {
-  try {
-    // Captura o container original e prepara para o clone
-    const originalWidth = element.scrollWidth;
-    const originalHeight = element.scrollHeight;
+  // 1. Criar um CLONE do dashboard em uma div oculta com largura fixa para evitar distorção responsiva
+  const clone = element.cloneNode(true) as HTMLElement;
+  
+  // Estilizar o clone para exportação perfeita
+  Object.assign(clone.style, {
+    position: 'fixed',
+    top: '0',
+    left: '-5000px', // Fora da tela
+    width: '1200px', // Largura fixa ideal para PDF
+    height: 'auto',
+    padding: '40px',
+    backgroundColor: darkMode ? '#020617' : '#f8fafc',
+    color: darkMode ? '#f1f5f9' : '#0f172a',
+    zIndex: '-1000'
+  });
 
-    const canvas = await html2canvas(element, {
-      scale: 2,
+  // Ajustar todos os cards no clone para não serem flex/grid dinâmicos que quebram
+  const cards = clone.querySelectorAll('[id^="chart-card-"]');
+  cards.forEach((card: any) => {
+    card.style.width = '100%';
+    card.style.height = '500px';
+    card.style.marginBottom = '30px';
+    card.style.breakInside = 'avoid';
+    
+    // Forçar quebra de linha em títulos longos
+    const title = card.querySelector('h4');
+    if (title) {
+      title.style.whiteSpace = 'normal';
+      title.style.wordBreak = 'break-word';
+      title.style.overflow = 'visible';
+    }
+  });
+
+  document.body.appendChild(clone);
+
+  try {
+    const canvas = await html2canvas(clone, {
+      scale: 2, // Alta qualidade
       useCORS: true,
       logging: false,
       backgroundColor: darkMode ? '#020617' : '#f8fafc',
-      windowWidth: originalWidth,
-      windowHeight: originalHeight,
-      onclone: (clonedDoc) => {
-        const clonedElement = clonedDoc.getElementById(element.id);
-        if (clonedElement) {
-          // Forçar um layout vertical limpo para o PDF
-          clonedElement.style.display = 'flex';
-          clonedElement.style.flexDirection = 'column';
-          clonedElement.style.gap = '40px';
-          clonedElement.style.padding = '40px';
-          clonedElement.style.height = 'auto';
-          clonedElement.style.width = '1200px'; // Largura fixa para consistência no PDF
-          clonedElement.style.overflow = 'visible';
-          
-          // Se o container usar Grid, transformamos em bloco para empilhar
-          const grid = clonedElement.querySelector('.grid');
-          if (grid instanceof HTMLElement) {
-            grid.style.display = 'flex';
-            grid.style.flexDirection = 'column';
-            grid.style.gap = '30px';
-            grid.style.width = '100%';
-          }
-
-          // Ajustar todos os cards para largura total
-          const cards = clonedElement.querySelectorAll('[id^="chart-card-"]');
-          cards.forEach((card) => {
-            if (card instanceof HTMLElement) {
-              card.style.width = '100%';
-              card.style.height = '500px';
-              card.style.marginBottom = '20px';
-              card.style.breakInside = 'avoid';
-              card.style.boxShadow = 'none';
-              card.style.border = '1px solid #e2e8f0';
-            }
-          });
-        }
-      }
+      windowWidth: 1200
     });
 
-    const imgData = canvas.toDataURL('image/png', 1.0);
-    const pdf = new jsPDF('p', 'mm', 'a4');
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({
+      orientation: 'p',
+      unit: 'px',
+      format: [canvas.width / 2, canvas.height / 2] // Ajustar tamanho do PDF ao conteúdo
+    });
+
     const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
-    let yPos = 15;
-
-    // Cabeçalho Executivo
-    if (logo) {
-      pdf.addImage(logo, 'PNG', 15, yPos, 30, 15);
-      yPos += 20;
-    }
-
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(22);
-    pdf.setTextColor(22, 211, 238); // Ciano Nexus
-    pdf.text("NEXUSDASH", 15, yPos);
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
     
-    pdf.setFontSize(12);
-    pdf.setTextColor(100, 100, 100);
-    pdf.text("RELATÓRIO DE BUSINESS INTELLIGENCE", 15, yPos + 7);
-    yPos += 25;
-
-    // Informações da Análise
+    // Adicionar Rodapé com Metadados
     pdf.setFontSize(10);
-    pdf.setTextColor(80, 80, 80);
-    pdf.text(`TOTAL DE REGISTROS: ${totalRegistros.toLocaleString('pt-BR')}`, 15, yPos);
-    pdf.text(`EMISSÃO: ${new Date().toLocaleString('pt-BR')}`, pdfWidth - 70, yPos);
-    yPos += 10;
+    pdf.setTextColor(darkMode ? 150 : 100);
+    pdf.text(`Nexus Dash - Relatório Analítico | Registros: ${totalRegistros} | Gerado em: ${new Date().toLocaleString('pt-BR')}`, 20, pdfHeight - 20);
 
-    // Linha de Separação
-    pdf.setDrawColor(22, 211, 238);
-    pdf.setLineWidth(0.5);
-    pdf.line(15, yPos, pdfWidth - 15, yPos);
-    yPos += 15;
-
-    // Adição da Imagem do Dashboard com suporte a múltiplas páginas se necessário
-    const imgWidth = pdfWidth - 30;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-    // Se a altura for maior que o espaço restante na página, podemos precisar de lógica de quebra
-    // Mas para dashboards capturados como uma única imagem longa, vamos escalar ou quebrar em partes.
-    // Lógica simplificada: se for muito longo, jsPDF permite adicionar mais páginas e "cortar" a imagem.
-    
-    let heightLeft = imgHeight;
-    let position = yPos;
-
-    // Primeira página
-    pdf.addImage(imgData, 'PNG', 15, position, imgWidth, imgHeight);
-    
-    // Se quiser suporte real a multipáginas (opcional, mas recomendado para dashboards longos):
-    /*
-    while (heightLeft > 0) {
-      pdf.addImage(imgData, 'PNG', 15, position, imgWidth, imgHeight);
-      heightLeft -= (pdfHeight - 20);
-      position -= (pdfHeight - 20);
-      if (heightLeft > 0) {
-        pdf.addPage();
-      }
-    }
-    */
-
-    pdf.save(`NexusDash_BI_Report_${Date.now()}.pdf`);
-    return true;
-  } catch (error) {
-    console.error("Erro ao gerar PDF:", error);
-    throw error;
+    pdf.save(`NexusDash_Relatorio_${Date.now()}.pdf`);
+  } finally {
+    document.body.removeChild(clone);
   }
 };
