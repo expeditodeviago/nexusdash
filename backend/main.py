@@ -14,14 +14,12 @@ load_dotenv()
 
 app = FastAPI(title="NexusDash Core API")
 
-# Configuração de Segurança de Origens (CORS)
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
-
+# Configuração de CORS (Compatibilidade Total: Vercel + Render)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_origins=["*"],
+    allow_credentials=False, # Definido como False para permitir o uso de ["*"]
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
