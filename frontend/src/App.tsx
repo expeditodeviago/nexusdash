@@ -39,7 +39,9 @@ export default function App() {
     formData.append('file', file);
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'https://nexusdash-api.onrender.com';
+      const API_URL = import.meta.env.VITE_API_URL;
+      if (!API_URL) throw new Error("API_URL não configurada nas variáveis de ambiente.");
+
       const response = await fetch(`${API_URL}/api/upload`, {
         method: 'POST',
         body: formData,

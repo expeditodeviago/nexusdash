@@ -33,7 +33,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ fileId }) => {
     setLoading(true);
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'https://nexusdash-api.onrender.com';
+      const API_URL = import.meta.env.VITE_API_URL;
+      if (!API_URL) throw new Error("API_URL não configurada.");
+
       const response = await fetch(`${API_URL}/api/nexus/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

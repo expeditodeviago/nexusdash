@@ -14,13 +14,26 @@ load_dotenv()
 
 app = FastAPI(title="NexusDash Core API")
 
+# Configuração de Segurança de Origens (CORS)
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Middleware para Headers de Segurança
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 # Configuração Groq
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -99,9 +112,21 @@ def generate_insight(col_name, is_numeric, df):
 
 @app.post("/api/upload")
 async def process_data(file: UploadFile = File(...)):
+    # --- Auditoria de Segurança: Validação de Payload ---
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # Limite de 10MB
+    content = await file.read()
+    
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="Arquivo muito grande. Limite de 10MB.")
+    
+    allowed_extensions = {'.csv', '.xlsx', '.xls'}
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(status_code=400, detail="Extensão de arquivo não permitida.")
+    # --------------------------------------------------
+
     try:
-        content = await file.read()
-        if file.filename.endswith('.csv'):
+        if file_ext == '.csv':
             try: df = pd.read_csv(io.BytesIO(content), encoding='utf-8')
             except: df = pd.read_csv(io.BytesIO(content), encoding='latin-1')
         else:
@@ -172,6 +197,13 @@ async def process_data(file: UploadFile = File(...)):
 
 @app.post("/api/nexus/chat")
 async def nexus_chat(req: ChatRequest):
+    # --- Auditoria de Segurança: Sanitização de Input ---
+    if len(req.pergunta) > 1000:
+        return {"sucesso": False, "erro": "Pergunta excede o limite de 1000 caracteres."}
+    
+    pergunta_sanitizada = req.pergunta.strip()
+    # ----------------------------------------------------
+
     if not groq_client:
         return {"sucesso": False, "erro": "API Key do Groq não configurada."}
     
@@ -198,7 +230,7 @@ async def nexus_chat(req: ChatRequest):
         chat_completion = groq_client.chat.completions.create(
             messages=[
                 {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": req.pergunta}
+                {"role": "user", "content": pergunta_sanitizada}
             ],
             model="llama-3.1-8b-instant",
             temperature=0.2,
