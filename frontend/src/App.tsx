@@ -13,6 +13,7 @@ import { exportDashboardToPDF } from './utils/pdfExporter';
 
 export default function App() {
   const [appState, setAppState] = useState<'landing' | 'dashboard'>('landing');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Record<string, string>>({});
@@ -193,7 +194,7 @@ export default function App() {
   }, [appState, activeCharts, data]);
 
   return (
-    <div className="relative w-screen h-screen bg-slate-50 dark:bg-[#020617] transition-colors duration-300 overflow-hidden font-sans">
+    <div className="relative w-full h-screen bg-slate-50 dark:bg-[#020617] transition-colors duration-300 overflow-hidden font-sans">
       
       {/* RENDERIZAÇÃO CONDICIONAL PRINCIPAL */}
       {appState === 'landing' ? (
@@ -209,6 +210,8 @@ export default function App() {
             onGoHome={() => setAppState('landing')}
             logo={logo}
             setLogo={setLogo}
+            isOpen={isSidebarOpen}
+            onClose={() => setIsSidebarOpen(false)}
           />
 
           <main className="flex-1 flex flex-col relative overflow-hidden z-10 bg-slate-50 dark:bg-[#020617]">
@@ -217,20 +220,21 @@ export default function App() {
               onExport={handleExportPDF}
               darkMode={darkMode}
               toggleTheme={toggleTheme}
+              onMenuToggle={() => setIsSidebarOpen(!isSidebarOpen)}
             />
 
-            <div id="nexus-dashboard-container" className="flex-1 overflow-y-auto p-10 custom-scrollbar" ref={dashboardRef}>
+            <div id="nexus-dashboard-container" className="flex-1 overflow-y-auto p-4 md:p-10 custom-scrollbar" ref={dashboardRef}>
               {activeCharts.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 opacity-40 select-none">
+                <div className="h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-700 opacity-40 select-none text-center px-4">
                   <div className="relative mb-8">
-                    <LayoutDashboard size={100} className="animate-pulse" />
+                    <LayoutDashboard size={80} className="animate-pulse" />
                     <div className="absolute inset-0 bg-cyan-500 blur-3xl opacity-20"></div>
                   </div>
-                  <h3 className="text-3xl font-black uppercase tracking-[0.3em]">Painel Vazio</h3>
-                  <p className="text-sm font-bold uppercase tracking-widest mt-4">Ative variáveis na barra lateral para iniciar a análise.</p>
+                  <h3 className="text-xl md:text-3xl font-black uppercase tracking-[0.3em]">Painel Vazio</h3>
+                  <p className="text-[10px] md:text-sm font-bold uppercase tracking-widest mt-4">Ative variáveis na barra lateral para iniciar a análise.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 pb-20">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-8 pb-20">
                   {activeCharts.map((cfg, idx) => {
                     const series = data?.series?.[cfg.col];
                     const isNumeric = series?.is_numeric ?? cfg.isNumeric;
